@@ -56,6 +56,10 @@
 #include "jetson/jetson_encoder_factory.h"
 #endif
 
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+#include "media_foundation/media_foundation_encoder_factory.h"
+#endif
+
 namespace livekit_ffi {
 
 namespace {
