@@ -148,6 +148,9 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=dxgi");
             println!("cargo:rustc-link-lib=dylib=dwmapi");
             println!("cargo:rustc-link-lib=dylib=shcore");
+            println!("cargo:rustc-link-lib=dylib=mfplat");
+            println!("cargo:rustc-link-lib=dylib=evr");
+            println!("cargo:rustc-link-lib=dylib=mfuuid"); 
 
             //let path = env::current_dir().unwrap();
             //println!("cargo:rustc-link-search=native={}/vaapi-windows/x64/lib", path.display());
@@ -162,10 +165,13 @@ fn main() {
                 //.file("src/vaapi/vaapi_h264_encoder_wrapper.cpp")
                 //.file("src/vaapi/vaapi_encoder_factory.cpp")
                 //.file("src/vaapi/h264_encoder_impl.cpp")
+                .file("src/media_foundation/media_foundation_encoder_factory.cpp")
+                .file("src/media_foundation/h264_encoder_impl.cpp")
+                .flag("-DUSE_MEDIA_FOUNDATION_VIDEO_CODEC=1")
                 .flag("/std:c++20")
+                .flag("/EHsc");
                 //.flag("/wd4819")
                 //.flag("/wd4068")
-                .flag("/EHsc");
         }
         "linux" => {
             println!("cargo:rustc-link-lib=dylib=rt");
