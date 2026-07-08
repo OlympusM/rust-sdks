@@ -139,6 +139,7 @@ fn main() {
             println!("cargo:rustc-link-lib=dylib=crypt32");
             println!("cargo:rustc-link-lib=dylib=iphlpapi");
             println!("cargo:rustc-link-lib=dylib=ole32");
+            println!("cargo:rustc-link-lib=dylib=oleaut32");
             println!("cargo:rustc-link-lib=dylib=secur32");
             println!("cargo:rustc-link-lib=dylib=winmm");
             println!("cargo:rustc-link-lib=dylib=ws2_32");
@@ -166,6 +167,7 @@ fn main() {
                 //.file("src/vaapi/vaapi_encoder_factory.cpp")
                 //.file("src/vaapi/h264_encoder_impl.cpp")
                 .file("src/media_foundation/media_foundation_encoder_factory.cpp")
+                .file("src/media_foundation/media_foundation_utils.cc")
                 .file("src/media_foundation/h264_encoder_impl.cpp")
                 .flag("-DUSE_MEDIA_FOUNDATION_VIDEO_CODEC=1")
                 .flag("/std:c++20")

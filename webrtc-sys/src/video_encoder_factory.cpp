@@ -244,6 +244,21 @@ void AddVaapiFactory(
 #endif
 }
 
+void AddMediaFoundationFactory(
+    std::vector<VideoEncoderBackendFactory>& factories) {
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (webrtc::MediaFoundationVideoEncoderFactory::IsSupported()) {
+    AddBackendFactory(
+        factories,
+        VideoEncoderBackend::Hardware,
+        std::make_unique<webrtc::MediaFoundationVideoEncoderFactory>());
+    return;
+  }
+#else
+  (void)factories;
+#endif
+}
+
 }  // namespace
 
 using Factory = webrtc::VideoEncoderFactoryTemplate<
@@ -277,6 +292,12 @@ rust::Vec<VideoEncoderBackend> video_encoder_backend_list() {
 
 #if defined(USE_JETSON_VIDEO_CODEC)
   if (webrtc::JetsonVideoEncoderFactory::IsSupported()) {
+    has_hardware_backend = true;
+  }
+#endif
+
+#if defined(USE_MEDIA_FOUNDATION_VIDEO_CODEC)
+  if (webrtc::MediaFoundationVideoEncoderFactory::IsSupported()) {
     has_hardware_backend = true;
   }
 #endif
@@ -318,6 +339,7 @@ VideoEncoderFactory::InternalFactory::InternalFactory() {
 #endif
 
   AddJetsonFactory(factories_);
+  AddMediaFoundationFactory(factories_);
 
   const PreferredHwEncoderConfig preferred_hw_encoder =
       GetPreferredHwEncoderConfig();
