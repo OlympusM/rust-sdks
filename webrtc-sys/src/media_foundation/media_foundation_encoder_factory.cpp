@@ -62,10 +62,6 @@ bool ProbeHardwareH264Encoder() {
     }
     fflush(stderr);
 
-    // Also enumerate WITHOUT the HARDWARE flag, to see if a software-only
-    // encoder MFT (e.g. Microsoft's built-in H264 encoder) shows up instead.
-    // This tells us whether the hardware flag specifically is filtering
-    // everything out vs. no H264 encoder MFT existing at all on this system.
     IMFActivate** all_activates = nullptr;
     UINT32 all_count = 0;
     const HRESULT all_hr = MFTEnumEx(
@@ -117,7 +113,7 @@ bool ProbeHardwareH264Encoder() {
   return supported;
 }
 
-}  // namespace
+}
 
 MediaFoundationVideoEncoderFactory::MediaFoundationVideoEncoderFactory() {
   std::map<std::string, std::string> baselineParameters = {
@@ -175,4 +171,4 @@ MediaFoundationVideoEncoderFactory::GetImplementations() const {
   return supported_formats_;
 }
 
-}  // namespace webrtc
+}

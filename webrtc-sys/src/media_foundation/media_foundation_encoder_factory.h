@@ -32,6 +32,6 @@ class MediaFoundationVideoEncoderFactory : public VideoEncoderFactory {
   std::vector<SdpVideoFormat> supported_formats_;
 };
 
-}  // namespace webrtc
+}
 
-#endif  // MEDIA_FOUNDATION_VIDEO_ENCODER_FACTORY_H_
+#endif

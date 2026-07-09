@@ -171,5 +171,5 @@ bool ContainsIdrNalu(const uint8_t* data, size_t size) {
   return false;
 }
 
-}  // namespace mf_utils
-}  // namespace webrtc
+}
+}

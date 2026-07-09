@@ -24,10 +24,6 @@ namespace webrtc {
 
 namespace {
 
-// Process-wide refcounted MFStartup/MFShutdown pair. Multiple encoder
-// instances (e.g. simulcast via SimulcastEncoderAdapter, or serial
-// reinit across calls) can coexist; MF should only be started once and
-// shut down only when the last user releases it.
 class MediaFoundationRuntime {
  public:
   static bool Acquire() {
@@ -62,7 +58,7 @@ class MediaFoundationRuntime {
   }
 };
 
-}  // namespace
+}
 
 MediaFoundationH264EncoderImpl::MediaFoundationH264EncoderImpl(
     const webrtc::Environment& env,
@@ -102,9 +98,7 @@ bool MediaFoundationH264EncoderImpl::CreateEncoderMFT() {
     if (SUCCEEDED(hr)) {
       com_initialized_ = true;
     } else if (hr == RPC_E_CHANGED_MODE) {
-      // This thread already has an incompatible (STA) apartment set up by
-      // other code. We can still use MF on it; we just don't own tearing
-      // the apartment down.
+
       RTC_LOG(LS_WARNING)
           << "COM apartment already initialized in a different mode; "
           << "proceeding without owning CoUninitialize()";
@@ -135,8 +129,8 @@ bool MediaFoundationH264EncoderImpl::CreateEncoderMFT() {
   const HRESULT enum_hr = MFTEnumEx(
       MFT_CATEGORY_VIDEO_ENCODER,
       MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
-      nullptr,            // Any input type.
-      &output_type_info,  // H264 output required.
+      nullptr,
+      &output_type_info,
       &activates, &count);
 
   fprintf(stderr, "[MF-DIAG-IMPL] MFTEnumEx hr=0x%08lX count=%u\n",
@@ -182,9 +176,6 @@ bool MediaFoundationH264EncoderImpl::CreateEncoderMFT() {
   fflush(stderr);
 
   if (FAILED(qi_hr)) {
-    // Without ICodecAPI we can't drive bitrate/keyframe/rate-control, which
-    // this implementation relies on, so treat it as unusable rather than
-    // silently running with whatever defaults the driver picked.
     RTC_LOG(LS_WARNING) << "Encoder MFT does not expose ICodecAPI: "
                         << mf_utils::HResultToString(qi_hr);
     transform_.Reset();
@@ -211,8 +202,6 @@ bool MediaFoundationH264EncoderImpl::UnlockAsyncTransformIfNeeded() {
           static_cast<unsigned long>(attr_hr));
   fflush(stderr);
   if (FAILED(attr_hr)) {
-    // Not every MFT exposes an attribute store; treat as "not async" rather
-    // than a hard failure, matching documented MF behavior.
     is_async_ = false;
     return true;
   }
@@ -251,8 +240,35 @@ bool MediaFoundationH264EncoderImpl::UnlockAsyncTransformIfNeeded() {
 
 bool MediaFoundationH264EncoderImpl::ConfigureMediaTypes(
     int width, int height, int fps, uint32_t bitrate_bps) {
+  HRESULT hr;
+
+  Microsoft::WRL::ComPtr<IMFMediaType> output_type;
+  hr = MFCreateMediaType(&output_type);
+  if (FAILED(hr)) {
+    return false;
+  }
+  output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
+  output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
+  output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
+  MFSetAttributeSize(output_type.Get(), MF_MT_FRAME_SIZE, width, height);
+  MFSetAttributeRatio(output_type.Get(), MF_MT_FRAME_RATE, fps, 1);
+  MFSetAttributeRatio(output_type.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
+  output_type->SetUINT32(MF_MT_AVG_BITRATE, bitrate_bps);
+  output_type->SetUINT32(MF_MT_MPEG2_PROFILE,
+                         mf_utils::H264ProfileToMFProfile(profile_));
+
+  hr = transform_->SetOutputType(0, output_type.Get(), 0);
+  fprintf(stderr, "[MF-DIAG-IMPL] SetOutputType(H264) hr=0x%08lX\n",
+          static_cast<unsigned long>(hr));
+  fflush(stderr);
+  if (FAILED(hr)) {
+    RTC_LOG(LS_ERROR) << "SetOutputType failed: "
+                      << mf_utils::HResultToString(hr);
+    return false;
+  }
+
   Microsoft::WRL::ComPtr<IMFMediaType> input_type;
-  HRESULT hr = MFCreateMediaType(&input_type);
+  hr = MFCreateMediaType(&input_type);
   if (FAILED(hr)) {
     return false;
   }
@@ -269,33 +285,6 @@ bool MediaFoundationH264EncoderImpl::ConfigureMediaTypes(
   fflush(stderr);
   if (FAILED(hr)) {
     RTC_LOG(LS_ERROR) << "SetInputType failed: "
-                      << mf_utils::HResultToString(hr);
-    return false;
-  }
-
-  Microsoft::WRL::ComPtr<IMFMediaType> output_type;
-  hr = MFCreateMediaType(&output_type);
-  if (FAILED(hr)) {
-    return false;
-  }
-  output_type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
-  output_type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_H264);
-  output_type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
-  MFSetAttributeSize(output_type.Get(), MF_MT_FRAME_SIZE, width, height);
-  MFSetAttributeRatio(output_type.Get(), MF_MT_FRAME_RATE, fps, 1);
-  MFSetAttributeRatio(output_type.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
-  output_type->SetUINT32(MF_MT_AVG_BITRATE, bitrate_bps);
-  // Profile is signaled here (not via ICodecAPI) per the standard MF
-  // encoder configuration pattern.
-  output_type->SetUINT32(MF_MT_MPEG2_PROFILE,
-                         mf_utils::H264ProfileToMFProfile(profile_));
-
-  hr = transform_->SetOutputType(0, output_type.Get(), 0);
-  fprintf(stderr, "[MF-DIAG-IMPL] SetOutputType(H264) hr=0x%08lX\n",
-          static_cast<unsigned long>(hr));
-  fflush(stderr);
-  if (FAILED(hr)) {
-    RTC_LOG(LS_ERROR) << "SetOutputType failed: "
                       << mf_utils::HResultToString(hr);
     return false;
   }
@@ -337,8 +326,6 @@ bool MediaFoundationH264EncoderImpl::ConfigureCodecApi(uint32_t bitrate_bps,
   auto set_value = [this](const GUID& api, VARIANT* value, const char* name) {
     const HRESULT hr = codec_api_->SetValue(&api, value);
     if (FAILED(hr)) {
-      // Not every driver's MFT supports every property; log and continue
-      // rather than failing initialization.
       RTC_LOG(LS_WARNING) << "ICodecAPI: " << name << " not accepted ("
                           << mf_utils::HResultToString(hr) << ")";
     }
@@ -361,8 +348,6 @@ bool MediaFoundationH264EncoderImpl::ConfigureCodecApi(uint32_t bitrate_bps,
   var.boolVal = VARIANT_TRUE;
   set_value(CODECAPI_AVLowLatencyMode, &var, "AVLowLatencyMode");
 
-  // CABAC is a High/Main-profile feature; requesting it at Baseline is
-  // invalid on most drivers, so only ask for it where applicable.
   if (profile_ == H264Profile::kProfileMain ||
       profile_ == H264Profile::kProfileHigh ||
       profile_ == H264Profile::kProfileConstrainedHigh) {
@@ -404,8 +389,6 @@ int32_t MediaFoundationH264EncoderImpl::InitEncode(
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
 
-  // Tear down any previously configured transform, e.g. on a resolution
-  // change that reuses this encoder instance.
   if (transform_) {
     DestroyEncoder();
   }
@@ -428,7 +411,6 @@ int32_t MediaFoundationH264EncoderImpl::InitEncode(
     return WEBRTC_VIDEO_CODEC_ERROR;
   }
 
-  // WebRTC's VideoCodec bitrate fields are in kbps.
   const uint32_t bitrate_bps =
       (codec_.maxBitrate > 0 ? codec_.maxBitrate : codec_.startBitrate) *
       1000;
@@ -503,7 +485,6 @@ HRESULT MediaFoundationH264EncoderImpl::SubmitInput(const VideoFrame& frame,
     }
   }
 
-  // MF sample timestamps/durations are in 100-nanosecond units.
   const LONGLONG timestamp_100ns =
       static_cast<LONGLONG>(frame.timestamp_us()) * 10;
   const LONGLONG duration_100ns =
@@ -669,10 +650,6 @@ bool MediaFoundationH264EncoderImpl::DrainOutput(
     const auto qp = h264_bitstream_parser_.GetLastSliceQp();
     encoded_image_.qp_ = qp.value_or(-1);
 
-    // NOTE: verify CodecSpecificInfoH264 member names against the exact
-    // WebRTC revision you're building against -- these have shifted across
-    // versions (e.g. temporal_idx/base_layer_sync are only meaningful if
-    // your build's H264 codec specific info still carries them).
     CodecSpecificInfo codec_specific;
     codec_specific.codecType = kVideoCodecH264;
     codec_specific.codecSpecific.H264.packetization_mode = packetization_mode_;
@@ -720,8 +697,6 @@ bool MediaFoundationH264EncoderImpl::DeliverNextOutputSample() {
   }
 
   if (hr == MF_E_TRANSFORM_NEED_MORE_INPUT) {
-    // A METransformHaveOutput event fired but there's nothing to pull yet;
-    // this can happen transiently. Nothing to deliver, not an error.
     return true;
   }
 
@@ -779,10 +754,6 @@ bool MediaFoundationH264EncoderImpl::DeliverNextOutputSample() {
       clean_point != 0 ||
       mf_utils::ContainsIdrNalu(encoded_image_.data(), encoded_image_.size());
 
-  // Pair this output with the oldest still-pending input's metadata. If the
-  // queue is empty (shouldn't normally happen -- it would mean the MFT
-  // produced more outputs than inputs we've submitted), fall back to
-  // whatever's currently in encoded_image_ rather than crashing.
   PendingFrameInfo frame_info;
   if (!pending_frames_.empty()) {
     frame_info = pending_frames_.front();
@@ -848,8 +819,6 @@ bool MediaFoundationH264EncoderImpl::HandleAsyncEvent(IMFMediaEvent* event) {
     case METransformDrainComplete:
       return true;
     default:
-      // Other event types (marker events, etc.) are not currently used by
-      // this implementation; ignore rather than fail.
       return true;
   }
 }
@@ -890,11 +859,9 @@ bool MediaFoundationH264EncoderImpl::SubmitInputAsync(const VideoFrame& frame,
     codec_api_->SetValue(&CODECAPI_AVEncVideoForceKeyFrame, &var);
   }
 
-  // Block until the MFT has told us it's ready for another input sample.
-  // Any output events encountered along the way are delivered immediately.
   while (async_need_input_count_ <= 0) {
     Microsoft::WRL::ComPtr<IMFMediaEvent> event;
-    const HRESULT hr = event_generator_->GetEvent(0, &event);  // Blocking.
+    const HRESULT hr = event_generator_->GetEvent(0, &event);
     if (FAILED(hr)) {
       RTC_LOG(LS_ERROR) << "GetEvent (blocking) failed: "
                         << mf_utils::HResultToString(hr);
@@ -944,8 +911,6 @@ bool MediaFoundationH264EncoderImpl::SubmitInputAsync(const VideoFrame& frame,
   frame_info.color_space = frame.color_space();
   pending_frames_.push_back(frame_info);
 
-  // Opportunistically pick up any output that's already arrived without
-  // blocking the caller further.
   return PumpAvailableEventsNonBlocking();
 }
 
@@ -984,7 +949,6 @@ int32_t MediaFoundationH264EncoderImpl::Encode(
   HRESULT hr = SubmitInput(input_frame, force_keyframe);
 
   if (hr == MF_E_NOTACCEPTING) {
-    // Input queue full: drain pending output, then retry once.
     if (!DrainOutput(input_frame)) {
       return WEBRTC_VIDEO_CODEC_ERROR;
     }
@@ -1045,4 +1009,4 @@ VideoEncoder::EncoderInfo MediaFoundationH264EncoderImpl::GetEncoderInfo() const
   return info;
 }
 
-}  // namespace webrtc
+}
