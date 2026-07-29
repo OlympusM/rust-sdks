@@ -7,6 +7,7 @@
 #include <limits>
 #include <mutex>
 #include <string>
+#include <cstring>
 
 #include "absl/strings/match.h"
 #include "absl/types/optional.h"
@@ -465,10 +466,13 @@ HRESULT MediaFoundationH264EncoderImpl::SubmitInput(const VideoFrame& frame,
                                                     bool force_keyframe) {
   const bool diag = frame_count_ < 10;
 
+  // Convert input frame directly to NV12 using built-in utilities
   if (!mf_utils::ConvertI420ToNV12(frame, &nv12_buffer_)) {
-    fprintf(stderr, "[MF-DIAG-IMPL] frame=%lld ConvertI420ToNV12 FAILED\n",
-            static_cast<long long>(frame_count_));
-    fflush(stderr);
+    if (diag) {
+      fprintf(stderr, "[MF-DIAG-IMPL] frame=%lld ConvertI420ToNV12 FAILED\n",
+              static_cast<long long>(frame_count_));
+      fflush(stderr);
+    }
     return E_FAIL;
   }
 
@@ -497,10 +501,12 @@ HRESULT MediaFoundationH264EncoderImpl::SubmitInput(const VideoFrame& frame,
       nv12_buffer_.data(), nv12_buffer_.size(), codec_.width, codec_.height,
       timestamp_100ns, duration_100ns, &sample);
   if (FAILED(create_hr)) {
-    fprintf(stderr, "[MF-DIAG-IMPL] frame=%lld CreateNV12Sample FAILED hr=0x%08lX\n",
-            static_cast<long long>(frame_count_),
-            static_cast<unsigned long>(create_hr));
-    fflush(stderr);
+    if (diag) {
+      fprintf(stderr, "[MF-DIAG-IMPL] frame=%lld CreateNV12Sample FAILED hr=0x%08lX\n",
+              static_cast<long long>(frame_count_),
+              static_cast<unsigned long>(create_hr));
+      fflush(stderr);
+    }
     RTC_LOG(LS_ERROR) << "Failed to build input sample: "
                       << mf_utils::HResultToString(create_hr);
     return create_hr;
@@ -1000,12 +1006,12 @@ void MediaFoundationH264EncoderImpl::SetRates(
 
 VideoEncoder::EncoderInfo MediaFoundationH264EncoderImpl::GetEncoderInfo() const {
   EncoderInfo info;
-  info.supports_native_handle = false;
+  info.supports_native_handle = true;
   info.implementation_name = "Media Foundation H264 Encoder";
   info.scaling_settings = VideoEncoder::ScalingSettings::kOff;
   info.is_hardware_accelerated = true;
   info.supports_simulcast = false;
-  info.preferred_pixel_formats = {VideoFrameBuffer::Type::kI420};
+  info.preferred_pixel_formats = {VideoFrameBuffer::Type::kNV12};
   return info;
 }
 
