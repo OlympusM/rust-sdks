@@ -40,7 +40,8 @@ bool ProbeHardwareH264Encoder() {
 
     const HRESULT hr = MFTEnumEx(
         MFT_CATEGORY_VIDEO_ENCODER,
-        MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_SORTANDFILTER,
+        MFT_ENUM_FLAG_HARDWARE | MFT_ENUM_FLAG_ASYNCMFT |
+            MFT_ENUM_FLAG_SORTANDFILTER,
         nullptr, &output_type_info, &activates, &count);
 
     fprintf(stderr,
